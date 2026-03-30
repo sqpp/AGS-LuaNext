@@ -1,0 +1,14 @@
+LIBRARY AgsLuaNext
+EXPORTS
+    AGS_GetPluginName @1
+    AGS_EditorStartup @2
+    AGS_EditorShutdown @3
+    AGS_EditorProperties @4
+    AGS_EditorSaveGame @5
+    AGS_EditorLoadGame @6
+    AGS_EngineStartup @7
+    AGS_EngineShutdown @8
+    AGS_EngineOnEvent @9
+    AGS_EngineDebugHook @10
+    AGS_EngineInitGfx @11
+    AGS_PluginV2 @12

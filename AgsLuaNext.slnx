@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="AgsLuaNext.vcxproj" Id="6b4eef25-acfd-43ad-aa0f-2749bf193435" />
+</Solution>
