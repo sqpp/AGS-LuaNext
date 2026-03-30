@@ -1,6 +1,6 @@
 # AgsLuaNext
 
-A high-performance, self-contained LuaJIT plugin for Adventure Game Studio (AGS).
+A high-performance LuaJIT plugin for Adventure Game Studio (AGS).
 
 ## Features
 
@@ -21,8 +21,11 @@ A high-performance, self-contained LuaJIT plugin for Adventure Game Studio (AGS)
 
 The project is designed for Visual Studio 2022 (MSVC v143+).
 
-1. Open `AgsLuaNext.slnx` in Visual Studio.
-2. Ensure `luajit.lib` is available in `third_party/luajit/lib/(Win32|x64)/`.
+1. **Build LuaJIT**:
+   - Open a "Developer Command Prompt for VS 2022 (x86)".
+   - Navigate to `third_party/luajit/src`.
+   - Run `msvcbuild.bat`
+2. Open `AgsLuaNext.slnx` in Visual Studio.
 3. Build the solution for your desired platform (Win32 is standard for AGS).
 
 ## Distribution

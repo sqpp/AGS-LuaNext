@@ -16,9 +16,6 @@ extern "C" {
 #include "luajit.h"
 }
 
-// Ensure the linker finds the LuaJIT library placed in third_party/luajit
-// (relative path from project root). This forces the linker to use that .lib.
-#pragma comment(lib, "third_party/luajit/luajit.lib")
 
 IAGSEngine* engine = nullptr;
 static lua_State* L = NULL;
