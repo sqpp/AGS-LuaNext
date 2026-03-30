@@ -3,6 +3,7 @@ name: Build AgsLuaNext (x86)
 on:
   push:
     branches: [ "**" ]
+    tags: [ "v*" ]
   pull_request:
     branches: [ main ]
 
@@ -31,6 +32,12 @@ jobs:
       run: |
         msbuild AgsLuaNext.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
 
+    - name: Create release package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Path dist -Force | Out-Null
+        Compress-Archive -Path Release/AgsLuaNext.dll, third_party/luajit/src/lua51.dll, AgsLua.ash, README.md, CHANGELOG.md, VERSION -DestinationPath dist/AgsLuaNext-x86.zip -Force
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -38,3 +45,19 @@ jobs:
         path: |
           Release/AgsLuaNext.dll
           third_party/luajit/src/lua51.dll
+          dist/AgsLuaNext-x86.zip
+          AgsLua.ash
+          README.md
+          CHANGELOG.md
+          VERSION
+
+    - name: Publish release assets
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/AgsLuaNext-x86.zip
+          Release/AgsLuaNext.dll
+          third_party/luajit/src/lua51.dll
+          AgsLua.ash
+        generate_release_notes: true

@@ -1,6 +1,10 @@
 #include "pch.h"
 #include "../include/agsplugin.h"
 
+#ifndef AGSLUANEXT_VERSION
+#define AGSLUANEXT_VERSION "0.1.0"
+#endif
+
 // Global engine pointer
 IAGSEngine* engine = nullptr;
 
@@ -42,6 +46,7 @@ DLLEXPORT void AGS_EditorLoadGame(char* /*data*/, int /*len*/)
 DLLEXPORT void AGS_EngineStartup(IAGSEngine* lpEngine)
 {
     engine = lpEngine;
+    engine->Log(AGSLOG_LEVEL_INFO, "[AgsLuaNext] Loaded plugin version %s", AGSLUANEXT_VERSION);
 
     // Register script functions with the engine (must be cdecl functions)
     engine->RegisterScriptFunction("Lua::Init^0", (void*)Lua_Init);
