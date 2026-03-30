@@ -7,6 +7,7 @@
 #endif
 #include <stdio.h>
 #include <string.h>
+#include <string>
 #include "../include/agsplugin.h"
 
 extern "C" {
@@ -17,7 +18,113 @@ extern "C" {
 }
 
 
-IAGSEngine* engine = nullptr;
+// Shared engine pointer (defined in plugin_exports.cpp)
+extern IAGSEngine* engine;
+
+#ifdef _WIN32
+// Absolute path to the game's project "lib" folder (native DLLs). Exposed to Lua as AGS_NATIVE_LIB_DIR.
+// ffi.load("curl") only checks exe dir / cwd / PATH; Lua should ffi.load(AGS_NATIVE_LIB_DIR.."\\curl.dll").
+// SetDllDirectory(lib) helps dependent DLLs next to curl.dll.
+static char g_agsNativeLibDir[2048] = {};
+
+// fullPathInOut: full path to a marker file; on success becomes "...\lib" directory (nul-terminated).
+static bool ComputeProjectLibDirFromResolvedFile(char* fullPathInOut, size_t pathCap) {
+    char* s = strrchr(fullPathInOut, '\\');
+    if (!s)
+        s = strrchr(fullPathInOut, '/');
+    if (!s)
+        return false;
+    *s = '\0';
+
+    s = strrchr(fullPathInOut, '\\');
+    if (!s)
+        s = strrchr(fullPathInOut, '/');
+    char* lastSeg = s ? (s + 1) : fullPathInOut;
+    if (s && _stricmp(lastSeg, "lua") == 0) {
+        size_t tail = (size_t)((s + 1) - fullPathInOut);
+        if (tail < pathCap)
+            strcpy_s(s + 1, pathCap - tail, "lib");
+    }
+
+    return fullPathInOut[0] != '\0';
+}
+
+static bool CanonicalDirectoryInPlace(char* path, size_t cap) {
+    char out[4096] = {};
+    DWORD n = GetFullPathNameA(path, static_cast<DWORD>(sizeof(out)), out, nullptr);
+    if (n == 0 || n >= sizeof(out) || n >= cap)
+        return false;
+    for (char* p = out; *p; ++p) {
+        if (*p == '/')
+            *p = '\\';
+    }
+    return strcpy_s(path, cap, out) == 0;
+}
+
+static void ResolveAndPublishNativeLibDir(lua_State* L) {
+    g_agsNativeLibDir[0] = '\0';
+    if (!engine)
+        return;
+
+    static const char* kMarkers[] = {
+        "..\\..\\lib\\libcurl.lua",
+        "..\\lib\\libcurl.lua",
+        "..\\..\\..\\lib\\libcurl.lua",
+        "..\\..\\lua\\libcurl.lua",
+        "..\\lua\\libcurl.lua",
+        "..\\..\\..\\lua\\libcurl.lua",
+        "..\\..\\lib\\curl.dll",
+        "..\\..\\lib\\libcurl.dll",
+        "..\\lib\\curl.dll",
+        "..\\lib\\libcurl.dll",
+        "..\\..\\..\\lib\\curl.dll",
+        "..\\..\\..\\lib\\libcurl.dll",
+    };
+
+    char buf[2048] = {};
+    for (const char* rel : kMarkers) {
+        buf[0] = '\0';
+        engine->GetPathToFileInCompiledFolder(rel, buf);
+        if (!buf[0])
+            continue;
+        if (!ComputeProjectLibDirFromResolvedFile(buf, sizeof(buf)))
+            continue;
+        if (!CanonicalDirectoryInPlace(buf, sizeof(buf)))
+            continue;
+        if (strcpy_s(g_agsNativeLibDir, sizeof(g_agsNativeLibDir), buf) != 0)
+            continue;
+
+        {
+            char probe[2600] = {};
+            if (strcpy_s(probe, sizeof(probe), g_agsNativeLibDir) == 0
+                && strcat_s(probe, sizeof(probe), "\\curl.dll") == 0) {
+                const DWORD a = GetFileAttributesA(probe);
+                if (a == INVALID_FILE_ATTRIBUTES) {
+                    engine->Log(AGSLOG_LEVEL_ERROR,
+                        "[AgsLuaNext] curl.dll not at %s (GetLastError=%lu)",
+                        probe,
+                        static_cast<unsigned long>(GetLastError()));
+                }
+                else {
+                    engine->Log(AGSLOG_LEVEL_INFO, "[AgsLuaNext] Found %s", probe);
+                }
+            }
+        }
+
+        SetDllDirectoryA(g_agsNativeLibDir);
+        engine->Log(AGSLOG_LEVEL_INFO, "[AgsLuaNext] Native lib dir: %s", g_agsNativeLibDir);
+        if (L) {
+            lua_pushstring(L, g_agsNativeLibDir);
+            lua_setglobal(L, "AGS_NATIVE_LIB_DIR");
+        }
+        return;
+    }
+
+    engine->Log(AGSLOG_LEVEL_WARN,
+        "[AgsLuaNext] Could not resolve project lib/ (put AGS_NATIVE_LIB_DIR unset; ffi.load(\"curl\") needs exe dir or PATH).");
+}
+#endif
+
 static lua_State* L = NULL;
 
 const char* LUA_BRIDGE_CODE = R"AGSLUA(_G.ffi = require("ffi")
@@ -145,6 +252,7 @@ struct IAGSEngine {
     size_t (__stdcall *GetDynamicArraySize)(IAGSEngine*, const void*);
   } *lpVtbl;
 };
+]]
 
 local addr = GetAgsEngineAddress()
 local engine = ffi.cast("IAGSEngine*", addr)
@@ -193,3 +301,225 @@ _G.ags.GetVersion = function() return ffi.string(engine.lpVtbl.GetEngineVersion(
 _G.ags.GetEngineVersion = _G.ags.GetVersion
 _G.ags.GetGraphicsDriverID = function() return ffi.string(engine.lpVtbl.GetGraphicsDriverID(engine)) end
 )AGSLUA";
+
+static void NormalizePathSlashes(char* buf) {
+    if (!buf) return;
+    for (; *buf; ++buf) {
+        if (*buf == '\\')
+            *buf = '/';
+    }
+}
+
+static void AppendPackagePath(lua_State* Ls, const char* absPattern) {
+    if (!absPattern || !absPattern[0])
+        return;
+    lua_getglobal(Ls, "package");
+    lua_getfield(Ls, -1, "path");
+    const char* cur = lua_tostring(Ls, -1);
+    std::string combined = cur ? cur : "";
+    combined += ";";
+    combined += absPattern;
+    lua_pop(Ls, 1);
+    lua_pushstring(Ls, combined.c_str());
+    lua_setfield(Ls, -2, "path");
+    lua_pop(Ls, 1);
+}
+
+static void AppendPackageCpath(lua_State* Ls, const char* absPattern) {
+    if (!absPattern || !absPattern[0])
+        return;
+    lua_getglobal(Ls, "package");
+    lua_getfield(Ls, -1, "cpath");
+    const char* cur = lua_tostring(Ls, -1);
+    std::string combined = cur ? cur : "";
+    combined += ";";
+    combined += absPattern;
+    lua_pop(Ls, 1);
+    lua_pushstring(Ls, combined.c_str());
+    lua_setfield(Ls, -2, "cpath");
+    lua_pop(Ls, 1);
+}
+
+static void TryCompiledFolderPattern(lua_State* Ls, const char* relativePath, bool forCpath) {
+    if (!engine || !Ls || !relativePath)
+        return;
+    char buf[2048];
+    buf[0] = '\0';
+    engine->GetPathToFileInCompiledFolder(relativePath, buf);
+    if (!buf[0])
+        return;
+    NormalizePathSlashes(buf);
+    if (forCpath)
+        AppendPackageCpath(Ls, buf);
+    else
+        AppendPackagePath(Ls, buf);
+}
+
+static void TryResolveScriptPath(lua_State* Ls, const char* scriptPath, bool forCpath) {
+    if (!engine || !Ls || !scriptPath)
+        return;
+    char buf[2048];
+    size_t n = engine->ResolveFilePath(scriptPath, buf, sizeof(buf));
+    if (n == 0 || n >= sizeof(buf) || !buf[0])
+        return;
+    NormalizePathSlashes(buf);
+    if (forCpath)
+        AppendPackageCpath(Ls, buf);
+    else
+        AppendPackagePath(Ls, buf);
+}
+
+static void ConfigureLuaModuleSearchPaths(lua_State* Ls) {
+    if (!engine || !Ls)
+        return;
+
+    static const char* kLuaCompiledRel[] = {
+        "..\\lua\\?.lua",
+        "..\\..\\lua\\?.lua",
+        "..\\..\\..\\lua\\?.lua",
+        "..\\lua\\?\\init.lua",
+        "..\\..\\lua\\?\\init.lua",
+        "..\\..\\..\\lua\\?\\init.lua",
+        "..\\lib\\?.lua",
+        "..\\..\\lib\\?.lua",
+        "..\\..\\..\\lib\\?.lua",
+        "..\\lib\\?\\init.lua",
+        "..\\..\\lib\\?\\init.lua",
+        "..\\..\\..\\lib\\?\\init.lua",
+        "..\\?.lua",
+        "..\\..\\?.lua",
+        "..\\..\\..\\?.lua",
+    };
+    for (const char* rel : kLuaCompiledRel)
+        TryCompiledFolderPattern(Ls, rel, false);
+
+    static const char* kDllCompiledRel[] = {
+        "..\\lib\\?.dll",
+        "..\\..\\lib\\?.dll",
+        "..\\..\\..\\lib\\?.dll",
+    };
+    for (const char* rel : kDllCompiledRel)
+        TryCompiledFolderPattern(Ls, rel, true);
+
+    static const char* kResolvePath[] = {
+        "lua/?.lua",
+        "lua/?/init.lua",
+        "lib/?.lua",
+        "lib/?/init.lua",
+    };
+    for (const char* sp : kResolvePath)
+        TryResolveScriptPath(Ls, sp, false);
+
+    static const char* kResolveCpath[] = {
+        "lib/?.dll",
+    };
+    for (const char* sp : kResolveCpath)
+        TryResolveScriptPath(Ls, sp, true);
+
+    engine->Log(AGSLOG_LEVEL_INFO,
+        "[AgsLuaNext] package.path / package.cpath updated (lua, lib, extra .. levels, ResolveFilePath).");
+}
+
+extern "C" {
+    // This function is registered with Lua to return the engine address
+    int GetAgsEngineAddress(lua_State* L) {
+        lua_pushlightuserdata(L, (void*)engine);
+        return 1;
+    }
+
+    // Native print function to route Lua print() to AGS engine
+    int Lua_Print(lua_State* L) {
+        int nargs = lua_gettop(L);
+        std::string out = "";
+        for (int i = 1; i <= nargs; i++) {
+            if (i > 1) out += "\t";
+            if (lua_isstring(L, i)) {
+                out += lua_tostring(L, i);
+            }
+            else if (lua_isboolean(L, i)) {
+                out += lua_toboolean(L, i) ? "true" : "false";
+            }
+            else if (lua_isnil(L, i)) {
+                out += "nil";
+            }
+            else {
+                out += luaL_typename(L, i);
+            }
+        }
+        if (engine && !out.empty()) {
+            // AGS 4 can swallow PrintDebugConsole depending on context; engine log is more reliable.
+            engine->Log(AGSLOG_LEVEL_INFO, "%s", out.c_str());
+            engine->PrintDebugConsole(out.c_str());
+        }
+        return 0;
+    }
+
+    void Lua_Init() {
+        if (L) return;
+        L = luaL_newstate();
+        if (!L) return;
+        luaL_openlibs(L);
+
+        // Register the helper to get the engine pointer
+        lua_register(L, "GetAgsEngineAddress", GetAgsEngineAddress);
+
+        // Register the native print function to bypass FFI for debug output
+        lua_register(L, "print", Lua_Print);
+        // Many scripts expect `Log(...)` instead of `print(...)`.
+        // Alias it to our routed print.
+        lua_getglobal(L, "print");
+        lua_setglobal(L, "Log");
+
+        // Execute the bridge code to set up the FFI mapping
+        if (luaL_dostring(L, LUA_BRIDGE_CODE) != 0) {
+            const char* err = lua_tostring(L, -1);
+            if (engine && err) {
+                engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] LUA_BRIDGE_CODE error: %s", err);
+                engine->AbortGame(err);
+            }
+            lua_pop(L, 1);
+        }
+
+#ifdef _WIN32
+        ResolveAndPublishNativeLibDir(L);
+#endif
+        ConfigureLuaModuleSearchPaths(L);
+
+        if (luaL_dostring(L,
+            "local ok, err = pcall(require, \"init\")\n"
+            "if not ok then print(\"[AgsLuaNext] require('init') failed: \" .. tostring(err)) end") != 0) {
+            const char* err = lua_tostring(L, -1);
+            if (engine && err)
+                engine->PrintDebugConsole(err);
+            lua_pop(L, 1);
+        }
+    }
+
+    void Lua_Run(const char* code) {
+        if (!L) Lua_Init();
+        if (!L || !code) return;
+
+        if (luaL_dostring(L, code) != 0) {
+            const char* err = lua_tostring(L, -1);
+            if (engine && err) {
+                engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] Lua.Run error: %s", err);
+                engine->AbortGame(err);
+            }
+            lua_pop(L, 1);
+        }
+    }
+
+    void Lua_Load(const char* filename) {
+        if (!L) Lua_Init();
+        if (!L || !filename) return;
+
+        if (luaL_dofile(L, filename) != 0) {
+            const char* err = lua_tostring(L, -1);
+            if (engine && err) {
+                engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] Lua.Load error: %s", err);
+                engine->AbortGame(err);
+            }
+            lua_pop(L, 1);
+        }
+    }
+}

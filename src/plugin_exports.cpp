@@ -1,7 +1,14 @@
 #include "pch.h"
 #include "../include/agsplugin.h"
 
-// Minimal AGS plugin exports to satisfy linker. Implement full behavior as needed.
+// Global engine pointer
+IAGSEngine* engine = nullptr;
+
+// Bridge to AgsLuaNext.cpp
+extern "C" {
+    void Lua_Init();
+    void Lua_Run(const char* code);
+}
 
 extern "C" {
 
@@ -12,7 +19,7 @@ DLLEXPORT const char* AGS_GetPluginName(void)
 
 DLLEXPORT int AGS_EditorStartup(void* /*editor*/)
 {
-    return 0; // not used
+    return 0;
 }
 
 DLLEXPORT void AGS_EditorShutdown(void)
@@ -32,10 +39,16 @@ DLLEXPORT void AGS_EditorLoadGame(char* /*data*/, int /*len*/)
 {
 }
 
-DLLEXPORT void AGS_EngineStartup(IAGSEngine* engine)
+DLLEXPORT void AGS_EngineStartup(IAGSEngine* lpEngine)
 {
-    // store engine pointer if needed by plugin
-    (void)engine;
+    engine = lpEngine;
+
+    // Register script functions with the engine (must be cdecl functions)
+    engine->RegisterScriptFunction("Lua::Init^0", (void*)Lua_Init);
+    engine->RegisterScriptFunction("Lua::Run^1", (void*)Lua_Run);
+    
+    // Auto-initialize the bridge on startup
+    Lua_Init();
 }
 
 DLLEXPORT void AGS_EngineShutdown(void)
@@ -58,7 +71,7 @@ DLLEXPORT void AGS_EngineInitGfx(const char* /*driverID*/, void* /*data*/)
 
 DLLEXPORT int AGS_PluginV2()
 {
-    return 2; // advertise Plugin V2 interface
+    return 2;
 }
 
 }

@@ -1,4 +1,4 @@
-// AgsLuaNext: Modern LuaJIT Bridge for AGS 3.6.2 (2026 Edition)
+// AgsLuaNext: LuaJIT for AGS 3.6.2
 
 managed struct Lua {
     /// Initializes the LuaJIT VM (called automatically by Run if not initialized)
