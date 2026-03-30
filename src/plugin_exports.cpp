@@ -2,7 +2,7 @@
 #include "../include/agsplugin.h"
 
 #ifndef AGSLUANEXT_VERSION
-#define AGSLUANEXT_VERSION "0.1.0"
+#define AGSLUANEXT_VERSION "1.0.0"
 #endif
 
 // Global engine pointer
