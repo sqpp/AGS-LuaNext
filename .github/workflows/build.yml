@@ -23,7 +23,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # WINDOWS SPECIFIC SETUP
+    # WINDOWS: Build LuaJIT (x86)
     - name: Setup MSVC (x86)
       if: matrix.os == 'windows-latest'
       uses: ilammy/msvc-dev-cmd@v1
@@ -37,40 +37,58 @@ jobs:
       run: |
         call msvcbuild.bat
 
-    # LINUX SPECIFIC SETUP (Dual Architecture x86/x64)
-    - name: Install Dependencies (Linux)
+    # LINUX: Build LuaJIT (Dual Architecture)
+    - name: Install Build Tools (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libluajit-5.1-dev zip gcc-multilib g++-multilib
+        sudo apt-get install -y zip gcc-multilib g++-multilib
 
-    # MACOS SPECIFIC SETUP
-    - name: Install Dependencies (macOS)
-      if: matrix.os == 'macos-latest'
+    - name: Build LuaJIT 64-bit (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      working-directory: third_party/luajit/src
       run: |
-        brew install luajit
+        make clean
+        make -j$(nproc) CFLAGS='-fPIC' amalg
 
-    # WINDOWS BUILD
+    - name: Build LuaJIT 32-bit (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      working-directory: third_party/luajit/src
+      run: |
+        # Store 64-bit lib temporarily
+        mv libluajit.a libluajit_tmp.a
+        make clean
+        make -j$(nproc) CC='gcc -m32' amalg
+        mv libluajit.a libluajit32.a
+        # Restore 64-bit lib
+        mv libluajit_tmp.a libluajit.a
+
+    # MACOS: Build LuaJIT
+    - name: Build LuaJIT (macOS)
+      if: matrix.os == 'macos-latest'
+      working-directory: third_party/luajit/src
+      run: |
+        make clean
+        make -j$(nproc) amalg
+
+    # CONFIGURE & BUILD
     - name: Configure CMake (Windows)
       if: matrix.os == 'windows-latest'
       run: cmake -B build -S . -A Win32
 
-    # LINUX DUAL BUILD
     - name: Configure CMake (Linux 64-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake -B build64 -S .
 
-    # LINUX 32-bit (requires specific flags)
     - name: Configure CMake (Linux 32-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake -B build32 -S . -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" -DCMAKE_SHARED_LINKER_FLAGS="-m32"
 
-    # MACOS BUILD
     - name: Configure CMake (macOS)
       if: matrix.os == 'macos-latest'
       run: cmake -B build -S .
 
-    # Build steps
+    # Build steps (unified)
     - name: Build (Windows/macOS)
       if: matrix.os != 'ubuntu-latest'
       run: cmake --build build --config Release
