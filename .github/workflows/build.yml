@@ -1,5 +1,5 @@
-name: Build AgsLuaNext (x86)
-
+name: Build AgsLuaNext
+ 
 on:
   push:
     branches: [ "**" ]
@@ -8,62 +8,107 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
-
+ 
 permissions:
   contents: write
-
+ 
 jobs:
   build:
-    runs-on: windows-latest
-
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+ 
     steps:
     - uses: actions/checkout@v4
-
+ 
+    # WINDOWS SPECIFIC SETUP
     - name: Setup MSVC (x86)
+      if: matrix.os == 'windows-latest'
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
-
-    - name: Build LuaJIT (x86)
+ 
+    - name: Build LuaJIT (Windows x86)
+      if: matrix.os == 'windows-latest'
       shell: cmd
       working-directory: third_party/luajit/src
       run: |
         call msvcbuild.bat
-
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
-
-    - name: Build AgsLuaNext (x86)
+ 
+    # LINUX SPECIFIC SETUP
+    - name: Install Dependencies (Linux)
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        msbuild AgsLuaNext.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v143
-
-    - name: Create release package
+        sudo apt-get update
+        sudo apt-get install -y libluajit-5.1-dev zip
+ 
+    # MACOS SPECIFIC SETUP
+    - name: Install Dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install luajit
+ 
+    # UNIFIED BUILD (CMAKE)
+    - name: Configure CMake (Windows)
+      if: matrix.os == 'windows-latest'
+      run: cmake -B build -S . -A Win32
+ 
+    - name: Configure CMake (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: cmake -B build -S .
+ 
+    - name: Configure CMake (macOS)
+      if: matrix.os == 'macos-latest'
+      run: cmake -B build -S . -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+ 
+    - name: Build
+      run: cmake --build build --config Release
+ 
+    # PACKAGE
+    - name: Create release package (Windows)
+      if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Path dist -Force | Out-Null
-        Compress-Archive -Path Release/AgsLuaNext.dll, third_party/luajit/src/lua51.dll, AgsLua.ash, README.md, CHANGELOG.md, VERSION -DestinationPath dist/AgsLuaNext-x86.zip -Force
-
+        $files = "build/Release/AgsLuaNext.dll", "third_party/luajit/src/lua51.dll", "AgsLua.ash", "README.md", "CHANGELOG.md", "VERSION"
+        Compress-Archive -Path $files -DestinationPath dist/AgsLuaNext-Windows.zip -Force
+ 
+    - name: Create release package (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        mkdir -p dist
+        zip -j dist/AgsLuaNext-Linux.zip build/libAgsLuaNext.so AgsLua.ash README.md CHANGELOG.md VERSION
+ 
+    - name: Create release package (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        mkdir -p dist
+        zip -j dist/AgsLuaNext-macOS.zip build/libAgsLuaNext.dylib AgsLua.ash README.md CHANGELOG.md VERSION
+ 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: AgsLuaNext-x86
-        path: |
-          Release/AgsLuaNext.dll
-          third_party/luajit/src/lua51.dll
-          dist/AgsLuaNext-x86.zip
-          AgsLua.ash
-          README.md
-          CHANGELOG.md
-          VERSION
-
+        name: AgsLuaNext-${{ matrix.os }}
+        path: dist/*.zip
+ 
+  release:
+    name: Publish Release Assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        pattern: AgsLuaNext-*
+        merge-multiple: true
+ 
     - name: Publish release assets
-      if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'release'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        files: |
-          dist/AgsLuaNext-x86.zip
-          Release/AgsLuaNext.dll
-          third_party/luajit/src/lua51.dll
-          AgsLua.ash
+        files: artifacts/*.zip
         generate_release_notes: false
