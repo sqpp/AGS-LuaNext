@@ -14,7 +14,7 @@ if(WIN32)
     set(LUA_LIBS lua51.lib)
 else()
     # On Linux/macOS:
-    # We strictly want the STATIC library so the .so is self-contained.
+    # 1. Try to find the STATIC local build first (for self-contained plugins)
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
         set(LUA_LIB_NAME "libluajit.a")
     else()
@@ -25,12 +25,29 @@ else()
         HINTS "${CMAKE_SOURCE_DIR}/third_party/luajit/src"
         NO_DEFAULT_PATH)
     
+    # 2. Fallback to system LuaJIT if the local one is missing (for GitHub CI)
     if(NOT LUA_LIBS)
-        message(FATAL_ERROR "Could not find local static LuaJIT for architecture ${CMAKE_SIZEOF_VOID_P} in third_party/luajit/src. Build it first!")
-    endif()
+        message(STATUS "Local static LuaJIT not found. Falling back to system discovery...")
+        # Try luajit specifically first
+        find_package(PkgConfig QUIET)
+        if(PKG_CONFIG_FOUND)
+            pkg_check_modules(LUA luajit QUIET)
+            if(LUA_FOUND)
+                set(LUA_LIBS ${LUA_LIBRARIES})
+                include_directories(${LUA_INCLUDE_DIRS})
+            endif()
+        endif()
 
-    message(STATUS "Using STATIC LuaJIT: ${LUA_LIBS}")
-    include_directories(third_party/luajit/src)
+        # Last resort fallback to standard Lua 5.1
+        if(NOT LUA_LIBS)
+            find_package(Lua51 REQUIRED)
+            set(LUA_LIBS ${LUA_LIBRARIES})
+            include_directories(${LUA_INCLUDE_DIR})
+        endif()
+    else()
+        message(STATUS "Using STATIC LuaJIT: ${LUA_LIBS}")
+        include_directories(third_party/luajit/src)
+    endif()
     
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
