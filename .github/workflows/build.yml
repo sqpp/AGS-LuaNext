@@ -1,4 +1,4 @@
-name: Build AgsLuaNext
+name:Build AgsLuaNext
  
 on:
   push:
@@ -37,12 +37,12 @@ jobs:
       run: |
         call msvcbuild.bat
  
-    # LINUX SPECIFIC SETUP
+    # LINUX SPECIFIC SETUP (Dual Architecture x86/x64)
     - name: Install Dependencies (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y libluajit-5.1-dev zip
+        sudo apt-get install -y libluajit-5.1-dev zip gcc-multilib g++-multilib
  
     # MACOS SPECIFIC SETUP
     - name: Install Dependencies (macOS)
@@ -50,21 +50,36 @@ jobs:
       run: |
         brew install luajit
  
-    # UNIFIED BUILD (CMAKE)
+    # WINDOWS BUILD
     - name: Configure CMake (Windows)
       if: matrix.os == 'windows-latest'
       run: cmake -B build -S . -A Win32
  
-    - name: Configure CMake (Linux)
+    # LINUX DUAL BUILD
+    - name: Configure CMake (Linux 64-bit)
       if: matrix.os == 'ubuntu-latest'
-      run: cmake -B build -S .
+      run: cmake -B build64 -S .
  
+    - name: Configure CMake (Linux 32-bit)
+      if: matrix.os == 'ubuntu-latest'
+      run: cmake -B build32 -S . -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" -DCMAKE_SHARED_LINKER_FLAGS="-m32"
+ 
+    # MACOS BUILD
     - name: Configure CMake (macOS)
       if: matrix.os == 'macos-latest'
       run: cmake -B build -S .
  
-    - name: Build
+    - name: Build (Windows/macOS)
+      if: matrix.os != 'ubuntu-latest'
       run: cmake --build build --config Release
+ 
+    - name: Build (Linux 64-bit)
+      if: matrix.os == 'ubuntu-latest'
+      run: cmake --build build64 --config Release
+ 
+    - name: Build (Linux 32-bit)
+      if: matrix.os == 'ubuntu-latest'
+      run: cmake --build build32 --config Release
  
     # PACKAGE
     - name: Create release package (Windows)
@@ -79,7 +94,10 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         mkdir -p dist
-        zip -j dist/AgsLuaNext-Linux.zip build/libagsluanext.so AgsLua.ash README.md CHANGELOG.md VERSION
+        # Package both 32-bit and 64-bit binaries
+        mv build64/libagsluanext.so libagsluanext.so
+        mv build32/libagsluanext.so libagsluanext32.so
+        zip -j dist/AgsLuaNext-Linux.zip libagsluanext.so libagsluanext32.so AgsLua.ash README.md CHANGELOG.md VERSION
  
     - name: Create release package (macOS)
       if: matrix.os == 'macos-latest'
@@ -99,16 +117,16 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v4
       with:
-        path: artifacts
         pattern: AgsLuaNext-*
         merge-multiple: true
+        path: dist
  
-    - name: Publish release assets
+    - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.ref_name }}
-        files: artifacts/*.zip
-        generate_release_notes: false
+        files: dist/*.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
