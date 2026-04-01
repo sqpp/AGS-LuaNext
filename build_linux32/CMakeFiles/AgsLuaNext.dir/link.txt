@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC -m32 -m32 -L/usr/lib/gcc/x86_64-linux-gnu/13/32 -shared -Wl,-soname,libagsluanext.so -o libagsluanext.so CMakeFiles/AgsLuaNext.dir/src/AgsLuaNext.cpp.o CMakeFiles/AgsLuaNext.dir/src/plugin_exports.cpp.o CMakeFiles/AgsLuaNext.dir/src/dllmain.cpp.o  /mnt/e/Development/Plugins/AgsLuaNext/third_party/luajit/src/libluajit32.a 

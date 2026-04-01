@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 #ifndef AGSLUANEXT_VERSION
-#define AGSLUANEXT_VERSION "1.1.2"
+#define AGSLUANEXT_VERSION "1.2.1"
 #endif
 
 // Global engine pointer
@@ -20,65 +20,77 @@ extern "C" {
 
 extern "C" {
 
-DLLEXPORT const char* AGS_GetPluginName(void)
+#ifdef _WIN32
+#define PLUGIN_EXPORT DLLEXPORT
+#else
+#define PLUGIN_EXPORT __attribute__((visibility("default")))
+#endif
+
+PLUGIN_EXPORT const char* AGS_GetPluginName(void)
 {
     return "AgsLuaNext";
 }
 
-DLLEXPORT int AGS_EditorStartup(void* /*editor*/)
+PLUGIN_EXPORT int AGS_EditorStartup(void* /*editor*/)
 {
     return 0;
 }
 
-DLLEXPORT void AGS_EditorShutdown(void)
+PLUGIN_EXPORT void AGS_EditorShutdown(void)
 {
 }
 
-DLLEXPORT void AGS_EditorProperties(HWND /*hwnd*/)
+PLUGIN_EXPORT void AGS_EditorProperties(HWND /*hwnd*/)
 {
 }
 
-DLLEXPORT int AGS_EditorSaveGame(char* /*data*/, int /*len*/)
+PLUGIN_EXPORT int AGS_EditorSaveGame(char* /*data*/, int /*len*/)
 {
     return 0;
 }
 
-DLLEXPORT void AGS_EditorLoadGame(char* /*data*/, int /*len*/)
+PLUGIN_EXPORT void AGS_EditorLoadGame(char* /*data*/, int /*len*/)
 {
 }
 
-DLLEXPORT void AGS_EngineStartup(IAGSEngine* lpEngine)
+PLUGIN_EXPORT void AGS_EngineStartup(IAGSEngine* lpEngine)
 {
     engine = lpEngine;
-    engine->Log(AGSLOG_LEVEL_INFO, "[AgsLuaNext] Loaded plugin version %s", AGSLUANEXT_VERSION);
+    
+    printf("[AgsLuaNext] 1. Engine Startup entry point hit.\n");
+    fflush(stdout);
 
-    // Register script functions with the engine (must be cdecl functions)
+    if (!engine) return;
+    
+    printf("[AgsLuaNext] 2. Engine pointer valid. Registering functions...\n");
+    fflush(stdout);
+
     engine->RegisterScriptFunction("Lua::Init^0", (void*)Lua_Init);
     engine->RegisterScriptFunction("Lua::Run^1", (void*)Lua_Run);
-    
-    // Auto-initialize the bridge on startup
-    Lua_Init();
+
+    printf("[AgsLuaNext] 3. Engine Startup complete! Version: %s\n", AGSLUANEXT_VERSION);
+    fflush(stdout);
 }
 
-DLLEXPORT void AGS_EngineShutdown(void)
+PLUGIN_EXPORT void AGS_EngineShutdown(void)
 {
 }
 
-DLLEXPORT intptr_t AGS_EngineOnEvent(int /*evt*/, intptr_t /*data*/)
-{
-    return 0;
-}
-
-DLLEXPORT int AGS_EngineDebugHook(const char* /*script*/, int /*line*/, int /*level*/)
+PLUGIN_EXPORT intptr_t AGS_EngineOnEvent(int /*evt*/, intptr_t /*data*/)
 {
     return 0;
 }
 
-DLLEXPORT void AGS_EngineInitGfx(const char* /*driverID*/, void* /*data*/)
+PLUGIN_EXPORT int AGS_EngineDebugHook(const char* /*script*/, int /*line*/, int /*level*/)
+{
+    return 0;
+}
+
+PLUGIN_EXPORT void AGS_EngineInitGfx(const char* /*driverID*/, void* /*data*/)
 {
 }
 
-DLLEXPORT int AGS_PluginV2()
+PLUGIN_EXPORT int AGS_PluginV2()
 {
     return 2;
 }
