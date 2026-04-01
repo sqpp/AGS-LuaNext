@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Includes
 include_directories(include)
 
-# LuaJIT dependency
+# LuaJIT dependency discovery
 if(WIN32)
     include_directories(third_party/luajit/src)
     link_directories(third_party/luajit/src)
@@ -21,32 +21,51 @@ else()
         set(LUA_LIB_NAME "libluajit32.a")
     endif()
 
-    find_library(LUA_LIBS NAMES ${LUA_LIB_NAME}
+    find_library(LUA_LIBS_STATIC NAMES ${LUA_LIB_NAME}
         HINTS "${CMAKE_SOURCE_DIR}/third_party/luajit/src"
         NO_DEFAULT_PATH)
     
-    # 2. Fallback to system LuaJIT if the local one is missing (for GitHub CI)
-    if(NOT LUA_LIBS)
+    if(LUA_LIBS_STATIC)
+        set(LUA_LIBS ${LUA_LIBS_STATIC})
+        message(STATUS "Using STATIC LuaJIT: ${LUA_LIBS}")
+        include_directories(third_party/luajit/src)
+    else()
         message(STATUS "Local static LuaJIT not found. Falling back to system discovery...")
-        # Try luajit specifically first
+        
+        # 2. Try PkgConfig (common on Linux/macOS)
         find_package(PkgConfig QUIET)
         if(PKG_CONFIG_FOUND)
+            # macOS Brew often puts pc files in these locations
+            if(APPLE)
+                set(ENV{PKG_CONFIG_PATH} "$ENV{PKG_CONFIG_PATH}:/usr/local/lib/pkgconfig:/opt/homebrew/lib/pkgconfig:/usr/local/opt/luajit/lib/pkgconfig")
+            endif()
             pkg_check_modules(LUA luajit QUIET)
             if(LUA_FOUND)
                 set(LUA_LIBS ${LUA_LIBRARIES})
                 include_directories(${LUA_INCLUDE_DIRS})
+                link_directories(${LUA_LIBRARY_DIRS})
             endif()
         endif()
 
-        # Last resort fallback to standard Lua 5.1
+        # 3. Last resort fallback to standard library search (with Homebrew hints)
         if(NOT LUA_LIBS)
-            find_package(Lua51 REQUIRED)
-            set(LUA_LIBS ${LUA_LIBRARIES})
-            include_directories(${LUA_INCLUDE_DIR})
+            find_library(LUA_LIBS NAMES luajit-5.1.2 luajit-5.1 luajit
+                HINTS /usr/local/lib /opt/homebrew/lib /usr/local/opt/luajit/lib)
+            
+            # Find the header if the library was found
+            if(LUA_LIBS)
+                find_path(LUA_INCLUDE_DIR NAMES lua.h
+                    HINTS /usr/local/include/luajit-2.1 /opt/homebrew/include/luajit-2.1 /usr/local/opt/luajit/include/luajit-2.1)
+                if(LUA_INCLUDE_DIR)
+                    include_directories(${LUA_INCLUDE_DIR})
+                endif()
+            else()
+                # Absolute last fallback
+                find_package(Lua51 REQUIRED)
+                set(LUA_LIBS ${LUA_LIBRARIES})
+                include_directories(${LUA_INCLUDE_DIR})
+            endif()
         endif()
-    else()
-        message(STATUS "Using STATIC LuaJIT: ${LUA_LIBS}")
-        include_directories(third_party/luajit/src)
     endif()
     
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
