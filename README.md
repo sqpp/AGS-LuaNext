@@ -2,6 +2,8 @@
 
 LuaJIT plugin for Adventure Game Studio.
 
+## Current Version: 1.0.0
+
 ## What it provides
 
 - `Lua.Init()` and `Lua.Run(string code)` in AGS script.
@@ -67,4 +69,4 @@ Visual Studio 2022:
 
 ## License
 
-Same license terms as LuaJIT. See [LuaJIT COPYRIGHT](third_party/luajit/src/luajit.h).
+Same license terms as LuaJIT. (MIT) See [LuaJIT COPYRIGHT](third_party/luajit/src/luajit.h).
