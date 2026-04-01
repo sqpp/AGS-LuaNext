@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 #ifndef AGSLUANEXT_VERSION
-#define AGSLUANEXT_VERSION "1.1.0"
+#define AGSLUANEXT_VERSION "1.1.2"
 #endif
 
 // Global engine pointer

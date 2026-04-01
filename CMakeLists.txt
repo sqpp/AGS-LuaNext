@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AgsLuaNext VERSION 1.1.0 LANGUAGES C CXX)
+project(AgsLuaNext VERSION 1.1.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,7 +14,7 @@ if(WIN32)
     link_directories(third_party/luajit/src)
     set(LUA_LIBS lua51.lib)
 else()
-    # On Linux, use pkg-config for LuaJIT
+    # On Linux and macOS, use pkg-config for LuaJIT
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(LUAJIT REQUIRED luajit)
     include_directories(${LUAJIT_INCLUDE_DIRS})

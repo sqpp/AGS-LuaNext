@@ -1,4 +1,4 @@
-# DOWNLOAD AgsLuaNext 1.1.0 (LuaJIT for AGS 3.6+)
+# DOWNLOAD AgsLuaNext 1.1.2 (LuaJIT for AGS 3.6+)
 
 ## AgsLuaNext
 

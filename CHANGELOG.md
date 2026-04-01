@@ -5,16 +5,18 @@
  Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
  Project: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+ ## [1.1.2] - 2026-04-01
+ 
++### Fixed
++- **macOS CI build**: Removed universal binary enforcement in GitHub Actions to fix build failures when Homebrew dependencies only provide native architectures.
++
  ## [1.1.0] - 2026-04-01
  
  ### Added
- - **Multi-platform support**: Added build support for **Linux** and **macOS**.
+ - **Multi-platform support**: Added build support for **Linux** and Possibly? **macOS**.
  - **CMake build system**: Unified build process using `CMakeLists.txt`.
- - **Universal Binaries (Mac)**: Support for building arm64 and x86_64 in one file.
  - **Dynamic calling convention**: Lua bridge now automatically handles `__stdcall` only on Windows x86.
- 
- ### Changed
- - Refactored source code to be cross-platform, removing direct Windows API dependencies where possible.
+
  
  ## [1.0.0] - 2026-03-31
  
