@@ -1,8 +1,12 @@
+#ifdef _WIN32
 #include "pch.h"
+#endif
+
 #include "../include/agsplugin.h"
+#include <stdio.h>
 
 #ifndef AGSLUANEXT_VERSION
-#define AGSLUANEXT_VERSION "1.0.0"
+#define AGSLUANEXT_VERSION "1.1.0"
 #endif
 
 // Global engine pointer

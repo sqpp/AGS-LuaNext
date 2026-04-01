@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "pch.h"
 
 BOOL APIENTRY DllMain( HMODULE hModule,
@@ -15,3 +16,4 @@ BOOL APIENTRY DllMain( HMODULE hModule,
     }
     return TRUE;
 }
+#endif

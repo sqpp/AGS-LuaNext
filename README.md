@@ -1,75 +1,98 @@
-# AgsLuaNext
+# DOWNLOAD AgsLuaNext 1.1.0 (LuaJIT for AGS 3.6+)
 
-LuaJIT plugin for Adventure Game Studio.
+## AgsLuaNext
 
-## Current Version: 1.0.0
+AgsLuaNext is a high-performance LuaJIT bridge for Adventure Game Studio. It embeds the entire 107-function v30 Engine API directly into the Lua environment via FFI, allowing you to write game logic in Lua at native speeds with raw access to the engine.
 
-## What it provides
+### Features
 
-- `Lua.Init()` and `Lua.Run(string code)` in AGS script.
-- Embedded Lua bridge with `_G.ags` FFI wrappers for engine access.
-- Auto-loading of `lua/init.lua` during Lua initialization.
-- Logging from Lua `print(...)` to AGS plugin log output.
+- **LuaJIT Performance**: Experience the speed of Just-In-Time compilation within your AGS games.
+- **Cross-Platform**: Support for **Windows** (.dll), **Linux** (.so), and **macOS** (.dylib).
+- **Full Engine Access**: Over 100 engine functions are automatically exposed to Lua via the `ags` table (e.g., `ags.GetCharacter`, `ags.GetScreenDimensions`).
+- **Auto-Initialization**: Automatically loads `lua/init.lua` from your project folder on startup.
+- **Engine Logging**: Standard Lua `print(...)` and `Log(...)` calls are routed directly to the AGS Editor's Log pane and `PrintDebugConsole`.
+- **FFI Power**: Direct access to the C-level FFI library (`_G.ffi`) for calling external DLLs or defining custom C structs.
+- **Smart Path Resolution**: Finds your scripts in `lua/` or `lib/` folders, even when running from the debugger or standalone.
+- **Universal Binaries (Mac)**: Built with support for both Apple Silicon and Intel Macs.
 
-## Quick start
-
-1. Copy `AgsLuaNext.dll` and `lua51.dll` into your AGS Editor folder.
-2. Copy `AgsLuaNext.dll` and `lua51.dll` into your game project folder (same level as `.agf`).
-3. Enable the plugin in AGS (`Plugins` -> `Use this plugin`).
-4. Import `AgsLua.ash` into your project scripts.
-5. Create `lua/init.lua`.
+---
 
 ## Official Forum Link:
 https://www.adventuregamestudio.co.uk/forums/modules-plugins-tools/module-agsluanext-v1-0-lua-bridge/msg636689526/#msg636689526
 
-## Folder layout
+---
 
-Use this layout in your game project:
+## Quick start
 
-```text
-YourGame/
-  YourGame.agf
-  AgsLuaNext.dll
-  lua51.dll
-  lua/
-    init.lua
-  lib/
-    (optional native DLLs and Lua helper modules)
+1. Copy `AgsLuaNext.dll` (or platform equivalent) and `lua51.dll` into your AGS Editor folder.
+2. Copy the plugin and Lua runtime into your game project folder (same level as `.agf`).
+3. Enable the plugin in AGS (`Plugins` -> `Use this plugin`).
+4. Import `AgsLua.ash` into your project scripts.
+5. Create `lua/init.lua`.
+
+---
+
+## Module API (AGS Script)
+
+The native interface is accessible via the `Lua` managed struct. 
+
+```ags
+/// Initializes the LuaJIT VM. 
+/// Called automatically by Lua.Run() if not already initialized.
+static void Lua.Init();
+
+/// Runs a string of LuaJIT code immediately.
+static void Lua.Run(String code);
 ```
 
-## Script usage
+---
 
-In `GlobalScript.asc`:
+## Lua Environment API
 
-```c
-function game_start()
-{
-  Lua.Init();
-  Lua.Run("require('your_module')");
-}
+Once inside the Lua environment, you have access to several global tables and variables:
+
+```lua
+-- The 'ags' table contains all raw engine mappings.
+ags.PrintDebugConsole("Hello from Lua!")
+local x, y = ags.GetScreenDimensions()
+
+-- The 'ffi' library for advanced memory access and DLL calls.
+local ffi = require("ffi")
+
+-- Standard redirected output
+print("This goes to the AGS Log window")
+Log("So does this")
 ```
 
-Notes:
-- `lua/init.lua` is loaded automatically once when Lua initializes.
-- `Lua.Init()` is safe to call more than once; initialization happens once per process.
-- Use `print("message")` in Lua to write to AGS plugin logs.
-
-## Native DLLs (`lib/`)
-
-If Lua code uses `ffi.load(...)`:
-- keep native DLLs in your project `lib/` folder,
-- load them by path built from `AGS_NATIVE_LIB_DIR` when available, or by explicit path.
-
-This avoids relying on the current working directory.
+---
 
 ## Building
 
-Visual Studio 2022:
+AgsLuaNext uses **CMake** for cross-platform builds.
 
-1. Open a VS x86 developer prompt and run `msvcbuild.bat` in `third_party/luajit/src`.
-2. Open `AgsLuaNext.slnx`.
-3. Build `Win32` (`x86`) - required for AGS.
+### **Windows (Visual Studio 2022)**
+```powershell
+# Open a VS x86 developer prompt
+cmake -B build_win32 -S . -A Win32
+cmake --build build_win32 --config Release
+```
+
+### **Linux**
+Requires `libluajit-5.1-dev`.
+```bash
+cmake -B build_linux -S .
+make -C build_linux
+```
+
+### **macOS**
+Supports Universal Binaries (arm64 + x86_64).
+```bash
+cmake -B build_mac -S . -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+cmake --build build_mac --config Release
+```
+
+---
 
 ## License
 
-Same license terms as LuaJIT. (MIT) See [LuaJIT COPYRIGHT](third_party/luajit/src/luajit.h).
+AgsLuaNext is released under the **MIT License**. (Same license terms as LuaJIT). See [LuaJIT COPYRIGHT](third_party/luajit/src/luajit.h).

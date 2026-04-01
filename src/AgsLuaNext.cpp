@@ -1,13 +1,18 @@
+#ifdef _WIN32
 #include "pch.h"
 #define LUA_BUILD_AS_DLL
 #define THIS_IS_THE_PLUGIN
-#ifndef LUAJIT_LIB_PATH_COMMENT
-// NOTE: library linking to Lua/LuaJIT should be configured in the project settings.
-// The previous absolute pragma has been removed for portability.
+#include <windows.h>
+#else
+#define _stricmp strcasecmp
+#define strcpy_s(dest, n, src) strncpy(dest, src, n)
+#define strcat_s(dest, n, src) strncat(dest, src, n)
 #endif
+
 #include <stdio.h>
 #include <string.h>
 #include <string>
+#include <vector>
 #include "../include/agsplugin.h"
 
 extern "C" {
@@ -17,16 +22,12 @@ extern "C" {
 #include "luajit.h"
 }
 
-
 // Shared engine pointer (defined in plugin_exports.cpp)
 extern IAGSEngine* engine;
 
-#ifdef _WIN32
-// Absolute path to the game's project "lib" folder (native DLLs). Exposed to Lua as AGS_NATIVE_LIB_DIR.
-// ffi.load("curl") only checks exe dir / cwd / PATH; Lua should ffi.load(AGS_NATIVE_LIB_DIR.."\\curl.dll").
-// SetDllDirectory(lib) helps dependent DLLs next to curl.dll.
 static char g_agsNativeLibDir[2048] = {};
 
+#ifdef _WIN32
 // fullPathInOut: full path to a marker file; on success becomes "...\lib" directory (nul-terminated).
 static bool ComputeProjectLibDirFromResolvedFile(char* fullPathInOut, size_t pathCap) {
     char* s = strrchr(fullPathInOut, '\\');
@@ -99,13 +100,7 @@ static void ResolveAndPublishNativeLibDir(lua_State* L) {
             if (strcpy_s(probe, sizeof(probe), g_agsNativeLibDir) == 0
                 && strcat_s(probe, sizeof(probe), "\\curl.dll") == 0) {
                 const DWORD a = GetFileAttributesA(probe);
-                if (a == INVALID_FILE_ATTRIBUTES) {
-                    engine->Log(AGSLOG_LEVEL_ERROR,
-                        "[AgsLuaNext] curl.dll not at %s (GetLastError=%lu)",
-                        probe,
-                        static_cast<unsigned long>(GetLastError()));
-                }
-                else {
+                if (a != INVALID_FILE_ATTRIBUTES) {
                     engine->Log(AGSLOG_LEVEL_INFO, "[AgsLuaNext] Found %s", probe);
                 }
             }
@@ -127,9 +122,14 @@ static void ResolveAndPublishNativeLibDir(lua_State* L) {
 
 static lua_State* L = NULL;
 
-const char* LUA_BRIDGE_CODE = R"AGSLUA(_G.ffi = require("ffi")
+const char* LUA_BRIDGE_CODE_HEADER = R"AGSLUA(
+local ffi = require("ffi")
 
-ffi.cdef[[
+-- Dynamic calling convention: __stdcall on Windows x86, empty otherwise.
+local IS_WIN_X86 = (ffi.os == "Windows" and ffi.arch == "x86")
+local CC = IS_WIN_X86 and "__stdcall " or ""
+
+ffi.cdef([[
 typedef void BITMAP;
 typedef void* HWND;
 typedef void* LPDIRECTDRAW2;
@@ -146,113 +146,113 @@ typedef struct { int32_t pic; short xoffs, yoffs, speed; int32_t flags, sound, r
 typedef struct IAGSEngine IAGSEngine;
 struct IAGSEngine {
   struct {
-    void (__stdcall *AbortGame)(IAGSEngine*, const char*);
-    const char* (__stdcall *GetEngineVersion)(IAGSEngine*);
-    void (__stdcall *RegisterScriptFunction)(IAGSEngine*, const char*, void*);
-    HWND (__stdcall *GetWindowHandle)(IAGSEngine*);
-    LPDIRECTDRAW2 (__stdcall *GetDirectDraw2)(IAGSEngine*);
-    LPDIRECTDRAWSURFACE2 (__stdcall *GetBitmapSurface)(IAGSEngine*, BITMAP*);
-    BITMAP* (__stdcall *GetScreen)(IAGSEngine*);
-    void (__stdcall *RequestEventHook)(IAGSEngine*, int32_t);
-    int (__stdcall *GetSavedData)(IAGSEngine*, char*, int32_t);
-    BITMAP* (__stdcall *GetVirtualScreen)(IAGSEngine*);
-    void (__stdcall *DrawText)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, char*);
-    void (__stdcall *GetScreenDimensions)(IAGSEngine*, int32_t*, int32_t*, int32_t*);
-    unsigned char** (__stdcall *GetRawBitmapSurface)(IAGSEngine*, BITMAP*);
-    void (__stdcall *ReleaseBitmapSurface)(IAGSEngine*, BITMAP*);
-    void (__stdcall *GetMousePosition)(IAGSEngine*, int32_t*, int32_t*);
-    int (__stdcall *GetCurrentRoom)(IAGSEngine*);
-    int (__stdcall *GetNumBackgrounds)(IAGSEngine*);
-    int (__stdcall *GetCurrentBackground)(IAGSEngine*);
-    BITMAP* (__stdcall *GetBackgroundScene)(IAGSEngine*, int32_t);
-    void (__stdcall *GetBitmapDimensions)(IAGSEngine*, BITMAP*, int32_t*, int32_t*, int32_t*);
-    int (__stdcall *FWrite)(IAGSEngine*, void*, int32_t, int32_t);
-    int (__stdcall *FRead)(IAGSEngine*, void*, int32_t, int32_t);
-    void (__stdcall *DrawTextWrapped)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, int32_t, const char*);
-    void (__stdcall *SetVirtualScreen)(IAGSEngine*, BITMAP*);
-    int (__stdcall *LookupParserWord)(IAGSEngine*, const char*);
-    void (__stdcall *BlitBitmap)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
-    void (__stdcall *PollSystem)(IAGSEngine*);
-    int (__stdcall *GetNumCharacters)(IAGSEngine*);
-    AGSCharacter* (__stdcall *GetCharacter)(IAGSEngine*, int32_t);
-    AGSGameOptions* (__stdcall *GetGameOptions)(IAGSEngine*);
-    AGSColor* (__stdcall *GetPalette)(IAGSEngine*);
-    void (__stdcall *SetPalette)(IAGSEngine*, int32_t, int32_t, AGSColor*);
-    int (__stdcall *GetPlayerCharacter)(IAGSEngine*);
-    void (__stdcall *RoomToViewport)(IAGSEngine*, int32_t*, int32_t*);
-    void (__stdcall *ViewportToRoom)(IAGSEngine*, int32_t*, int32_t*);
-    int (__stdcall *GetNumObjects)(IAGSEngine*);
-    AGSObject* (__stdcall *GetObject)(IAGSEngine*, int32_t);
-    BITMAP* (__stdcall *GetSpriteGraphic)(IAGSEngine*, int32_t);
-    BITMAP* (__stdcall *CreateBlankBitmap)(IAGSEngine*, int32_t, int32_t, int32_t);
-    void (__stdcall *FreeBitmap)(IAGSEngine*, BITMAP*);
-    BITMAP* (__stdcall *GetRoomMask)(IAGSEngine*, int32_t);
-    AGSViewFrame* (__stdcall *GetViewFrame)(IAGSEngine*, int32_t, int32_t, int32_t);
-    int (__stdcall *GetWalkbehindBaseline)(IAGSEngine*, int32_t);
-    void* (__stdcall *GetScriptFunctionAddress)(IAGSEngine*, const char*);
-    int (__stdcall *GetBitmapTransparentColor)(IAGSEngine*, BITMAP*);
-    int (__stdcall *GetAreaScaling)(IAGSEngine*, int32_t, int32_t);
-    int (__stdcall *IsGamePaused)(IAGSEngine*);
-    int (__stdcall *GetRawPixelColor)(IAGSEngine*, int32_t);
-    int (__stdcall *GetSpriteWidth)(IAGSEngine*, int32_t);
-    int (__stdcall *GetSpriteHeight)(IAGSEngine*, int32_t);
-    void (__stdcall *GetTextExtent)(IAGSEngine*, int32_t, const char*, int32_t*, int32_t*);
-    void (__stdcall *PrintDebugConsole)(IAGSEngine*, const char*);
-    void (__stdcall *PlaySoundChannel)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, const char*);
-    int (__stdcall *IsChannelPlaying)(IAGSEngine*, int32_t);
-    void (__stdcall *MarkRegionDirty)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t);
-    void* (__stdcall *GetMouseCursor)(IAGSEngine*, int32_t);
-    void (__stdcall *GetRawColorComponents)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*, int32_t*, int32_t*);
-    int (__stdcall *MakeRawColorPixel)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, int32_t);
-    int (__stdcall *GetFontType)(IAGSEngine*, int32_t);
-    int (__stdcall *CreateDynamicSprite)(IAGSEngine*, int32_t, int32_t, int32_t);
-    void (__stdcall *DeleteDynamicSprite)(IAGSEngine*, int32_t);
-    int (__stdcall *IsSpriteAlphaBlended)(IAGSEngine*, int32_t);
-    void (__stdcall *UnrequestEventHook)(IAGSEngine*, int32_t);
-    void (__stdcall *BlitSpriteTranslucent)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
-    void (__stdcall *BlitSpriteRotated)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
-    void* (__stdcall *GetDirectSound)(IAGSEngine*);
-    void (__stdcall *DisableSound)(IAGSEngine*);
-    int (__stdcall *CanRunScriptFunctionNow)(IAGSEngine*);
-    int (__stdcall *CallGameScriptFunction)(IAGSEngine*, const char*, int32_t, int32_t, ...);
-    void (__stdcall *NotifySpriteUpdated)(IAGSEngine*, int32_t);
-    void (__stdcall *SetSpriteAlphaBlended)(IAGSEngine*, int32_t, int32_t);
-    void (__stdcall *QueueGameScriptFunction)(IAGSEngine*, const char*, int32_t, int32_t, ...);
-    int (__stdcall *RegisterManagedObject)(IAGSEngine*, void*, void*);
-    void (__stdcall *AddManagedObjectReader)(IAGSEngine*, const char*, void*);
-    void (__stdcall *RegisterUnserializedObject)(IAGSEngine*, int32_t, void*, void*);
-    void* (__stdcall *GetManagedObjectAddressByKey)(IAGSEngine*, int32_t);
-    int (__stdcall *GetManagedObjectKeyByAddress)(IAGSEngine*, void*);
-    const char* (__stdcall *CreateScriptString)(IAGSEngine*, const char*);
-    int (__stdcall *IncrementManagedObjectRefCount)(IAGSEngine*, void*);
-    int (__stdcall *DecrementManagedObjectRefCount)(IAGSEngine*, void*);
-    void (__stdcall *SetMousePosition)(int32_t, int32_t);
-    void (__stdcall *SimulateMouseClick)(IAGSEngine*, int32_t);
-    int (__stdcall *GetMovementPathWaypointCount)(IAGSEngine*, int32_t);
-    int (__stdcall *GetMovementPathLastWaypoint)(IAGSEngine*, int32_t);
-    void (__stdcall *GetMovementPathWaypointLocation)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*);
-    void (__stdcall *GetMovementPathWaypointSpeed)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*);
-    const char* (__stdcall *GetGraphicsDriverID)(IAGSEngine*);
-    int (__stdcall *IsRunningUnderDebugger)(IAGSEngine*);
-    void (__stdcall *BreakIntoDebugger)(IAGSEngine*);
-    void (__stdcall *GetPathToFileInCompiledFolder)(IAGSEngine*, const char*, char*);
-    void* (__stdcall *GetDirectInputKeyboard)(IAGSEngine*);
-    void* (__stdcall *GetDirectInputMouse)(IAGSEngine*);
-    void* (__stdcall *ReplaceFontRenderer)(IAGSEngine*, int32_t, void*);
-    void (__stdcall *GetRenderStageDesc)(IAGSEngine*, void*);
-    void (__stdcall *GetGameInfo)(IAGSEngine*, void*);
-    void* (__stdcall *ReplaceFontRenderer2)(IAGSEngine*, int32_t, void*);
-    void (__stdcall *NotifyFontUpdated)(IAGSEngine*, int32_t);
-    size_t (__stdcall *ResolveFilePath)(IAGSEngine*, const char*, char*, size_t);
-    void* (__stdcall *OpenFileStream)(IAGSEngine*, const char*, int32_t, int32_t);
-    void* (__stdcall *GetFileStreamByHandle)(IAGSEngine*, int32_t);
-    void (__stdcall *Log)(IAGSEngine*, int32_t, const char*, ...);
-    void* (__stdcall *CreateDynamicArray)(IAGSEngine*, size_t, size_t, bool);
-    size_t (__stdcall *GetDynamicArrayLength)(IAGSEngine*, const void*);
-    size_t (__stdcall *GetDynamicArraySize)(IAGSEngine*, const void*);
+    void (]] .. CC .. [[ *AbortGame)(IAGSEngine*, const char*);
+    const char* (]] .. CC .. [[ *GetEngineVersion)(IAGSEngine*);
+    void (]] .. CC .. [[ *RegisterScriptFunction)(IAGSEngine*, const char*, void*);
+    HWND (]] .. CC .. [[ *GetWindowHandle)(IAGSEngine*);
+    LPDIRECTDRAW2 (]] .. CC .. [[ *GetDirectDraw2)(IAGSEngine*);
+    LPDIRECTDRAWSURFACE2 (]] .. CC .. [[ *GetBitmapSurface)(IAGSEngine*, BITMAP*);
+    BITMAP* (]] .. CC .. [[ *GetScreen)(IAGSEngine*);
+    void (]] .. CC .. [[ *RequestEventHook)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetSavedData)(IAGSEngine*, char*, int32_t);
+    BITMAP* (]] .. CC .. [[ *GetVirtualScreen)(IAGSEngine*);
+    void (]] .. CC .. [[ *DrawText)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, char*);
+    void (]] .. CC .. [[ *GetScreenDimensions)(IAGSEngine*, int32_t*, int32_t*, int32_t*);
+    unsigned char** (]] .. CC .. [[ *GetRawBitmapSurface)(IAGSEngine*, BITMAP*);
+    void (]] .. CC .. [[ *ReleaseBitmapSurface)(IAGSEngine*, BITMAP*);
+    void (]] .. CC .. [[ *GetMousePosition)(IAGSEngine*, int32_t*, int32_t*);
+    int (]] .. CC .. [[ *GetCurrentRoom)(IAGSEngine*);
+    int (]] .. CC .. [[ *GetNumBackgrounds)(IAGSEngine*);
+    int (]] .. CC .. [[ *GetCurrentBackground)(IAGSEngine*);
+    BITMAP* (]] .. CC .. [[ *GetBackgroundScene)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *GetBitmapDimensions)(IAGSEngine*, BITMAP*, int32_t*, int32_t*, int32_t*);
+    int (]] .. CC .. [[ *FWrite)(IAGSEngine*, void*, int32_t, int32_t);
+    int (]] .. CC .. [[ *FRead)(IAGSEngine*, void*, int32_t, int32_t);
+    void (]] .. CC .. [[ *DrawTextWrapped)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, int32_t, const char*);
+    void (]] .. CC .. [[ *SetVirtualScreen)(IAGSEngine*, BITMAP*);
+    int (]] .. CC .. [[ *LookupParserWord)(IAGSEngine*, const char*);
+    void (]] .. CC .. [[ *BlitBitmap)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
+    void (]] .. CC .. [[ *PollSystem)(IAGSEngine*);
+    int (]] .. CC .. [[ *GetNumCharacters)(IAGSEngine*);
+    AGSCharacter* (]] .. CC .. [[ *GetCharacter)(IAGSEngine*, int32_t);
+    AGSGameOptions* (]] .. CC .. [[ *GetGameOptions)(IAGSEngine*);
+    AGSColor* (]] .. CC .. [[ *GetPalette)(IAGSEngine*);
+    void (]] .. CC .. [[ *SetPalette)(IAGSEngine*, int32_t, int32_t, AGSColor*);
+    int (]] .. CC .. [[ *GetPlayerCharacter)(IAGSEngine*);
+    void (]] .. CC .. [[ *RoomToViewport)(IAGSEngine*, int32_t*, int32_t*);
+    void (]] .. CC .. [[ *ViewportToRoom)(IAGSEngine*, int32_t*, int32_t*);
+    int (]] .. CC .. [[ *GetNumObjects)(IAGSEngine*);
+    AGSObject* (]] .. CC .. [[ *GetObject)(IAGSEngine*, int32_t);
+    BITMAP* (]] .. CC .. [[ *GetSpriteGraphic)(IAGSEngine*, int32_t);
+    BITMAP* (]] .. CC .. [[ *CreateBlankBitmap)(IAGSEngine*, int32_t, int32_t, int32_t);
+    void (]] .. CC .. [[ *FreeBitmap)(IAGSEngine*, BITMAP*);
+    BITMAP* (]] .. CC .. [[ *GetRoomMask)(IAGSEngine*, int32_t);
+    AGSViewFrame* (]] .. CC .. [[ *GetViewFrame)(IAGSEngine*, int32_t, int32_t, int32_t);
+    int (]] .. CC .. [[ *GetWalkbehindBaseline)(IAGSEngine*, int32_t);
+    void* (]] .. CC .. [[ *GetScriptFunctionAddress)(IAGSEngine*, const char*);
+    int (]] .. CC .. [[ *GetBitmapTransparentColor)(IAGSEngine*, BITMAP*);
+    int (]] .. CC .. [[ *GetAreaScaling)(IAGSEngine*, int32_t, int32_t);
+    int (]] .. CC .. [[ *IsGamePaused)(IAGSEngine*);
+    int (]] .. CC .. [[ *GetRawPixelColor)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetSpriteWidth)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetSpriteHeight)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *GetTextExtent)(IAGSEngine*, int32_t, const char*, int32_t*, int32_t*);
+    void (]] .. CC .. [[ *PrintDebugConsole)(IAGSEngine*, const char*);
+    void (]] .. CC .. [[ *PlaySoundChannel)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, const char*);
+    int (]] .. CC .. [[ *IsChannelPlaying)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *MarkRegionDirty)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t);
+    void* (]] .. CC .. [[ *GetMouseCursor)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *GetRawColorComponents)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*, int32_t*, int32_t*);
+    int (]] .. CC .. [[ *MakeRawColorPixel)(IAGSEngine*, int32_t, int32_t, int32_t, int32_t, int32_t);
+    int (]] .. CC .. [[ *GetFontType)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *CreateDynamicSprite)(IAGSEngine*, int32_t, int32_t, int32_t);
+    void (]] .. CC .. [[ *DeleteDynamicSprite)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *IsSpriteAlphaBlended)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *UnrequestEventHook)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *BlitSpriteTranslucent)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
+    void (]] .. CC .. [[ *BlitSpriteRotated)(IAGSEngine*, int32_t, int32_t, BITMAP*, int32_t);
+    void* (]] .. CC .. [[ *GetDirectSound)(IAGSEngine*);
+    void (]] .. CC .. [[ *DisableSound)(IAGSEngine*);
+    int (]] .. CC .. [[ *CanRunScriptFunctionNow)(IAGSEngine*);
+    int (]] .. CC .. [[ *CallGameScriptFunction)(IAGSEngine*, const char*, int32_t, int32_t, ...);
+    void (]] .. CC .. [[ *NotifySpriteUpdated)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *SetSpriteAlphaBlended)(IAGSEngine*, int32_t, int32_t);
+    void (]] .. CC .. [[ *QueueGameScriptFunction)(IAGSEngine*, const char*, int32_t, int32_t, ...);
+    int (]] .. CC .. [[ *RegisterManagedObject)(IAGSEngine*, void*, void*);
+    void (]] .. CC .. [[ *AddManagedObjectReader)(IAGSEngine*, const char*, void*);
+    void (]] .. CC .. [[ *RegisterUnserializedObject)(IAGSEngine*, int32_t, void*, void*);
+    void* (]] .. CC .. [[ *GetManagedObjectAddressByKey)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetManagedObjectKeyByAddress)(IAGSEngine*, void*);
+    const char* (]] .. CC .. [[ *CreateScriptString)(IAGSEngine*, const char*);
+    int (]] .. CC .. [[ *IncrementManagedObjectRefCount)(IAGSEngine*, void*);
+    int (]] .. CC .. [[ *DecrementManagedObjectRefCount)(IAGSEngine*, void*);
+    void (]] .. CC .. [[ *SetMousePosition)(int32_t, int32_t);
+    void (]] .. CC .. [[ *SimulateMouseClick)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetMovementPathWaypointCount)(IAGSEngine*, int32_t);
+    int (]] .. CC .. [[ *GetMovementPathLastWaypoint)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *GetMovementPathWaypointLocation)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*);
+    void (]] .. CC .. [[ *GetMovementPathWaypointSpeed)(IAGSEngine*, int32_t, int32_t, int32_t*, int32_t*);
+    const char* (]] .. CC .. [[ *GetGraphicsDriverID)(IAGSEngine*);
+    int (]] .. CC .. [[ *IsRunningUnderDebugger)(IAGSEngine*);
+    void (]] .. CC .. [[ *BreakIntoDebugger)(IAGSEngine*);
+    void (]] .. CC .. [[ *GetPathToFileInCompiledFolder)(IAGSEngine*, const char*, char*);
+    void* (]] .. CC .. [[ *GetDirectInputKeyboard)(IAGSEngine*);
+    void* (]] .. CC .. [[ *GetDirectInputMouse)(IAGSEngine*);
+    void* (]] .. CC .. [[ *ReplaceFontRenderer)(IAGSEngine*, int32_t, void*);
+    void (]] .. CC .. [[ *GetRenderStageDesc)(IAGSEngine*, void*);
+    void (]] .. CC .. [[ *GetGameInfo)(IAGSEngine*, void*);
+    void* (]] .. CC .. [[ *ReplaceFontRenderer2)(IAGSEngine*, int32_t, void*);
+    void (]] .. CC .. [[ *NotifyFontUpdated)(IAGSEngine*, int32_t);
+    size_t (]] .. CC .. [[ *ResolveFilePath)(IAGSEngine*, const char*, char*, size_t);
+    void* (]] .. CC .. [[ *OpenFileStream)(IAGSEngine*, const char*, int32_t, int32_t);
+    void* (]] .. CC .. [[ *GetFileStreamByHandle)(IAGSEngine*, int32_t);
+    void (]] .. CC .. [[ *Log)(IAGSEngine*, int32_t, const char*, ...);
+    void* (]] .. CC .. [[ *CreateDynamicArray)(IAGSEngine*, size_t, size_t, bool);
+    size_t (]] .. CC .. [[ *GetDynamicArrayLength)(IAGSEngine*, const void*);
+    size_t (]] .. CC .. [[ *GetDynamicArraySize)(IAGSEngine*, const void*);
   } *lpVtbl;
 };
-]]
+]])
 
 local addr = GetAgsEngineAddress()
 local engine = ffi.cast("IAGSEngine*", addr)
@@ -397,6 +397,8 @@ static void ConfigureLuaModuleSearchPaths(lua_State* Ls) {
         "..\\lib\\?.dll",
         "..\\..\\lib\\?.dll",
         "..\\..\\..\\lib\\?.dll",
+        "..\\lib\\?.so",
+        "..\\..\\lib\\?.so"
     };
     for (const char* rel : kDllCompiledRel)
         TryCompiledFolderPattern(Ls, rel, true);
@@ -412,12 +414,10 @@ static void ConfigureLuaModuleSearchPaths(lua_State* Ls) {
 
     static const char* kResolveCpath[] = {
         "lib/?.dll",
+        "lib/?.so"
     };
     for (const char* sp : kResolveCpath)
         TryResolveScriptPath(Ls, sp, true);
-
-    engine->Log(AGSLOG_LEVEL_INFO,
-        "[AgsLuaNext] package.path / package.cpath updated (lua, lib, extra .. levels, ResolveFilePath).");
 }
 
 extern "C" {
@@ -447,7 +447,6 @@ extern "C" {
             }
         }
         if (engine && !out.empty()) {
-            // AGS 4 can swallow PrintDebugConsole depending on context; engine log is more reliable.
             engine->Log(AGSLOG_LEVEL_INFO, "%s", out.c_str());
             engine->PrintDebugConsole(out.c_str());
         }
@@ -460,22 +459,15 @@ extern "C" {
         if (!L) return;
         luaL_openlibs(L);
 
-        // Register the helper to get the engine pointer
         lua_register(L, "GetAgsEngineAddress", GetAgsEngineAddress);
-
-        // Register the native print function to bypass FFI for debug output
         lua_register(L, "print", Lua_Print);
-        // Many scripts expect `Log(...)` instead of `print(...)`.
-        // Alias it to our routed print.
         lua_getglobal(L, "print");
         lua_setglobal(L, "Log");
 
-        // Execute the bridge code to set up the FFI mapping
-        if (luaL_dostring(L, LUA_BRIDGE_CODE) != 0) {
+        if (luaL_dostring(L, LUA_BRIDGE_CODE_HEADER) != 0) {
             const char* err = lua_tostring(L, -1);
             if (engine && err) {
                 engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] LUA_BRIDGE_CODE error: %s", err);
-                engine->AbortGame(err);
             }
             lua_pop(L, 1);
         }
@@ -503,7 +495,6 @@ extern "C" {
             const char* err = lua_tostring(L, -1);
             if (engine && err) {
                 engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] Lua.Run error: %s", err);
-                engine->AbortGame(err);
             }
             lua_pop(L, 1);
         }
@@ -517,7 +508,6 @@ extern "C" {
             const char* err = lua_tostring(L, -1);
             if (engine && err) {
                 engine->Log(AGSLOG_LEVEL_ERROR, "[AgsLuaNext] Lua.Load error: %s", err);
-                engine->AbortGame(err);
             }
             lua_pop(L, 1);
         }

@@ -5,6 +5,7 @@
 #define _AGS_PLUGIN_H
 #include <stdint.h>
 #include <stdarg.h>
+#include <stddef.h>
 
 #if !defined(_WINGDI_) && !defined(BITMAP_DEFINED)
 typedef void BITMAP;
