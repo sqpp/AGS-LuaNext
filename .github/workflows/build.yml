@@ -87,7 +87,7 @@ jobs:
       if: matrix.os == 'macos-latest'
       run: cmake -B build -S .
 
-    # Build steps (unified)
+    # Build steps
     - name: Build (Windows/macOS)
       if: matrix.os != 'ubuntu-latest'
       run: cmake --build build --config Release
@@ -112,10 +112,17 @@ jobs:
     - name: Create release package (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        mkdir -p dist
-        mv build64/libagsluanext.so libagsluanext.so
-        mv build32/libagsluanext.so libagsluanext32.so
-        zip -j dist/AgsLuaNext-Linux.zip libagsluanext.so libagsluanext32.so AgsLua.ash README.md CHANGELOG.md VERSION
+        mkdir -p dist/lib32 dist/lib64
+        # Maintain identical naming in architecture folders
+        cp build64/libagsluanext.so dist/lib64/libagsluanext.so
+        cp build32/libagsluanext.so dist/lib32/libagsluanext.so
+        cp AgsLua.ash dist/
+        cp README.md dist/
+        cp CHANGELOG.md dist/
+        cp VERSION dist/
+        cd dist
+        zip -r AgsLuaNext-Linux.zip lib32 lib64 AgsLua.ash README.md CHANGELOG.md VERSION
+        mv AgsLuaNext-Linux.zip ..
 
     - name: Create release package (macOS)
       if: matrix.os == 'macos-latest'
@@ -127,7 +134,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: AgsLuaNext-${{ matrix.os }}
-        path: dist/*.zip
+        path: |
+          dist/*.zip
+          dist/AgsLuaNext-Linux.zip
 
   release:
     name: Publish Release Assets
