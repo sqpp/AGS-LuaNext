@@ -19,6 +19,9 @@ LuaJIT plugin for Adventure Game Studio.
 4. Import `AgsLua.ash` into your project scripts.
 5. Create `lua/init.lua`.
 
+## Official Forum Link:
+https://www.adventuregamestudio.co.uk/forums/modules-plugins-tools/module-agsluanext-v1-0-lua-bridge/msg636689526/#msg636689526
+
 ## Folder layout
 
 Use this layout in your game project:
