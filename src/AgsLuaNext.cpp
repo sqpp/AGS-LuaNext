@@ -21,6 +21,9 @@ extern "C" {
 }
 
 #include "../include/agsplugin.h"
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // Global engine pointer defined in plugin_exports.cpp
 extern IAGSEngine* engine;
@@ -126,11 +129,7 @@ void Lua_Init() {
     Trace("Bridge execution successful!");
 
     // Auto-load lua/init.lua if present
-#ifdef _WIN32
-    if (_access("lua/init.lua", 0) == 0)
-#else
-    if (access("lua/init.lua", F_OK) == 0)
-#endif
+    if (fs::exists("lua/init.lua"))
     {
         Trace("Found lua/init.lua, loading...");
         if (luaL_loadfile(L, "lua/init.lua") == 0) {
