@@ -1,5 +1,5 @@
-name:Build AgsLuaNext
- 
+name: Build AgsLuaNext
+
 on:
   push:
     branches: [ "**" ]
@@ -8,10 +8,10 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
- 
+
 permissions:
   contents: write
- 
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -19,68 +19,70 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
- 
+
     steps:
     - uses: actions/checkout@v4
- 
+
     # WINDOWS SPECIFIC SETUP
     - name: Setup MSVC (x86)
       if: matrix.os == 'windows-latest'
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x86
- 
+
     - name: Build LuaJIT (Windows x86)
       if: matrix.os == 'windows-latest'
       shell: cmd
       working-directory: third_party/luajit/src
       run: |
         call msvcbuild.bat
- 
+
     # LINUX SPECIFIC SETUP (Dual Architecture x86/x64)
     - name: Install Dependencies (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get install -y libluajit-5.1-dev zip gcc-multilib g++-multilib
- 
+
     # MACOS SPECIFIC SETUP
     - name: Install Dependencies (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         brew install luajit
- 
+
     # WINDOWS BUILD
     - name: Configure CMake (Windows)
       if: matrix.os == 'windows-latest'
       run: cmake -B build -S . -A Win32
- 
+
     # LINUX DUAL BUILD
     - name: Configure CMake (Linux 64-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake -B build64 -S .
- 
+
+    # LINUX 32-bit (requires specific flags)
     - name: Configure CMake (Linux 32-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake -B build32 -S . -DCMAKE_C_FLAGS="-m32" -DCMAKE_CXX_FLAGS="-m32" -DCMAKE_SHARED_LINKER_FLAGS="-m32"
- 
+
     # MACOS BUILD
     - name: Configure CMake (macOS)
       if: matrix.os == 'macos-latest'
       run: cmake -B build -S .
- 
+
+    # Build steps
     - name: Build (Windows/macOS)
       if: matrix.os != 'ubuntu-latest'
       run: cmake --build build --config Release
- 
+
     - name: Build (Linux 64-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake --build build64 --config Release
- 
+
     - name: Build (Linux 32-bit)
       if: matrix.os == 'ubuntu-latest'
       run: cmake --build build32 --config Release
- 
+
     # PACKAGE
     - name: Create release package (Windows)
       if: matrix.os == 'windows-latest'
@@ -89,28 +91,27 @@ jobs:
         New-Item -ItemType Directory -Path dist -Force | Out-Null
         $files = "build/Release/AgsLuaNext.dll", "third_party/luajit/src/lua51.dll", "AgsLua.ash", "README.md", "CHANGELOG.md", "VERSION"
         Compress-Archive -Path $files -DestinationPath dist/AgsLuaNext-Windows.zip -Force
- 
+
     - name: Create release package (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
         mkdir -p dist
-        # Package both 32-bit and 64-bit binaries
         mv build64/libagsluanext.so libagsluanext.so
         mv build32/libagsluanext.so libagsluanext32.so
         zip -j dist/AgsLuaNext-Linux.zip libagsluanext.so libagsluanext32.so AgsLua.ash README.md CHANGELOG.md VERSION
- 
+
     - name: Create release package (macOS)
       if: matrix.os == 'macos-latest'
       run: |
         mkdir -p dist
         zip -j dist/AgsLuaNext-macOS.zip build/libagsluanext.dylib AgsLua.ash README.md CHANGELOG.md VERSION
- 
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: AgsLuaNext-${{ matrix.os }}
         path: dist/*.zip
- 
+
   release:
     name: Publish Release Assets
     needs: build
@@ -122,7 +123,7 @@ jobs:
         pattern: AgsLuaNext-*
         merge-multiple: true
         path: dist
- 
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
